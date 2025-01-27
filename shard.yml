@@ -1,0 +1,17 @@
+name: model_context_protocol
+version: 0.1.0
+
+authors:
+  - Petter Thowsen <petterthowsen@gmail.com>
+
+crystal: '>= 1.14.0'
+
+license: MIT
+
+dependencies:
+  sse:
+    github: y2k2mt/sse.cr
+    version: ~> 0.10.0
+  json_rpc:
+    github: Papierkorb/json_rpc
+    version: ~> 1.0.0
