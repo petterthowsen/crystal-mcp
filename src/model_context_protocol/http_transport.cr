@@ -13,6 +13,7 @@ module ModelContextProtocol
       private getter http_server : HTTP::Server?
       private getter request_handlers : Array(Messages::Request -> Messages::Response)
       private getter notification_handlers : Array(Messages::Notification -> Nil)
+      private property? is_server : Bool
       
       # Initialize as client
       def initialize(host : String, port : Int32)
@@ -20,6 +21,7 @@ module ModelContextProtocol
         @http_server = nil
         @request_handlers = [] of Messages::Request -> Messages::Response
         @notification_handlers = [] of Messages::Notification -> Nil
+        @is_server = false
       end
 
       # Initialize as server
@@ -28,6 +30,7 @@ module ModelContextProtocol
         @http_server = server
         @request_handlers = [] of Messages::Request -> Messages::Response
         @notification_handlers = [] of Messages::Notification -> Nil
+        @is_server = true
       end
 
       # Send a request via HTTP POST and wait for response
@@ -61,13 +64,25 @@ module ModelContextProtocol
 
       # Send a notification via HTTP POST (no response expected)
       def send_notification(notification : Messages::Notification) : Nil
-        client = @http_client
-        raise "Not initialized as client" unless client
+        if is_server?
+          # Server-side notifications are handled by registered handlers
+          @notification_handlers.each do |handler|
+            begin
+              handler.call(notification)
+            rescue ex
+              Log.error { "Failed to handle notification: #{ex.message}" }
+            end
+          end
+        else
+          # Client-side notifications are sent via HTTP POST
+          client = @http_client
+          raise "Not initialized as client" unless client
 
-        client.post("/", 
-          headers: HTTP::Headers{"Content-Type" => "application/json"},
-          body: notification.to_json
-        )
+          client.post("/", 
+            headers: HTTP::Headers{"Content-Type" => "application/json"},
+            body: notification.to_json
+          )
+        end
       rescue ex
         # Log error but don't raise since notifications don't expect responses
         Log.error { "Failed to send notification: #{ex.message}" }

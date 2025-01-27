@@ -1,6 +1,7 @@
 require "json"
 require "./messages"
 require "./transport"
+require "./client/*"
 
 module ModelContextProtocol
   # MCP Client implementation
@@ -8,6 +9,8 @@ module ModelContextProtocol
     VERSION = "0.1.0"
 
     class InitializeError < Exception; end
+    class SamplingError < Exception; end
+    class RootsError < Exception; end
 
     private getter transport : Transport::Base
     private getter capabilities : Hash(String, JSON::Any)
@@ -88,6 +91,53 @@ module ModelContextProtocol
       end
     end
 
+    # List available roots
+    def list_roots : Array(Root)
+      check_initialized!
+      check_roots_capability!
+
+      request = Messages::Request.new("4", "roots/list")
+      response = @transport.send_request(request)
+
+      handle_response(response) do |result|
+        roots = result["roots"].as_a
+        roots.map do |root_json|
+          Root.from_json(root_json.to_json)
+        end
+      end
+    end
+
+    # Create a sampling message
+    def create_message(
+      messages : Array(Message),
+      model_preferences : ModelPreferences,
+      system_prompt : String? = nil,
+      max_tokens : Int32? = nil
+    ) : Message
+      check_initialized!
+      check_sampling_capability!
+
+      params = {
+        "messages" => JSON::Any.new(messages.map(&.to_json_object)),
+        "modelPreferences" => JSON::Any.new(model_preferences.to_json_object)
+      } of String => JSON::Any
+
+      if system_prompt
+        params["systemPrompt"] = JSON::Any.new(system_prompt)
+      end
+
+      if max_tokens
+        params["maxTokens"] = JSON::Any.new(max_tokens)
+      end
+
+      request = Messages::Request.new("5", "sampling/createMessage", params)
+      response = @transport.send_request(request)
+
+      handle_response(response) do |result|
+        Message.from_json(result.to_json)
+      end
+    end
+
     # Close the client connection
     def close : Nil
       @transport.close
@@ -95,6 +145,18 @@ module ModelContextProtocol
 
     private def check_initialized!
       raise InitializeError.new("Client not initialized") unless initialized?
+    end
+
+    private def check_roots_capability!
+      unless @capabilities["roots"]?
+        raise RootsError.new("Server does not support roots capability")
+      end
+    end
+
+    private def check_sampling_capability!
+      unless @capabilities["sampling"]?
+        raise SamplingError.new("Server does not support sampling capability")
+      end
     end
 
     private def handle_response(response : Messages::Response)
